@@ -4,13 +4,11 @@ import * as THREE from 'three';
 import { AppState, OrnamentData } from '../types';
 import { useStore } from '../store';
 
-// Custom Billboard to replace missing drei export
-const Billboard: React.FC<{ children: React.ReactNode; [key: string]: any }> = ({ children }) => {
+const Billboard = ({ children, follow = true, lockX = false, lockY = false, lockZ = false }: { children: React.ReactNode, follow?: boolean, lockX?: boolean, lockY?: boolean, lockZ?: boolean }) => {
   const group = useRef<THREE.Group>(null);
   useFrame(({ camera }) => {
-    if (group.current) {
-      group.current.quaternion.copy(camera.quaternion);
-    }
+    if (!group.current || !follow) return;
+    group.current.lookAt(camera.position);
   });
   return <group ref={group}>{children}</group>;
 };
