@@ -1,87 +1,74 @@
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { Ornament } from './Ornament';
 import { AppState } from '../types';
 
-// Custom implementations to replace missing drei exports
-
-const Float = ({ children, speed = 1, rotationIntensity = 1, floatIntensity = 1 }: any) => {
+// Custom Float component
+const Float = ({ children, speed = 1, rotationIntensity = 1, floatIntensity = 1, floatingRange = [-0.1, 0.1] }: any) => {
   const ref = useRef<THREE.Group>(null);
-  const offset = useRef(Math.random() * 10000);
+  const offset = useRef(Math.random() * 100);
   useFrame((state) => {
-    if (ref.current) {
-      const t = offset.current + state.clock.getElapsedTime();
-      ref.current.rotation.x = (Math.cos((t / 4) * speed) / 8) * rotationIntensity;
-      ref.current.rotation.y = (Math.sin((t / 4) * speed) / 8) * rotationIntensity;
-      ref.current.rotation.z = (Math.sin((t / 4) * speed) / 20) * rotationIntensity;
-      ref.current.position.y = (Math.sin((t / 4) * speed) / 10) * floatIntensity;
-    }
+    if (!ref.current) return;
+    const t = offset.current + state.clock.elapsedTime * speed;
+    ref.current.position.y = Math.sin(t) * floatIntensity * 0.1;
+    ref.current.rotation.x = Math.sin(t) * rotationIntensity * 0.1;
+    ref.current.rotation.z = Math.cos(t) * rotationIntensity * 0.1;
   });
   return <group ref={ref}>{children}</group>;
 };
 
-const Stars = ({ radius = 100, count = 5000, speed = 1 }: any) => {
-  const ref = useRef<THREE.Group>(null);
-  const [positions] = useState(() => {
+// Custom Stars component
+const Stars = ({ radius = 100, depth = 50, count = 5000, factor = 4, saturation = 0, fade = false, speed = 1 }: any) => {
+  const positions = useMemo(() => {
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const r = radius * Math.cbrt(Math.random());
-      const theta = Math.random() * 2 * Math.PI;
+      const r = radius + Math.random() * depth;
+      const theta = 2 * Math.PI * Math.random();
       const phi = Math.acos(2 * Math.random() - 1);
       pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       pos[i * 3 + 2] = r * Math.cos(phi);
     }
     return pos;
-  });
-
-  useFrame((state, delta) => {
-    if (ref.current) {
-      ref.current.rotation.y -= delta * 0.02 * speed;
-    }
-  });
-
+  }, [count, radius, depth]);
+  
   return (
-    <group ref={ref}>
-      <points>
-        <bufferGeometry>
-           <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        </bufferGeometry>
-        <pointsMaterial size={0.5} color="white" transparent opacity={0.8} sizeAttenuation />
-      </points>
-    </group>
+    <points>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
+      </bufferGeometry>
+      <pointsMaterial size={0.5} color="white" transparent opacity={0.8} sizeAttenuation fog={false} />
+    </points>
   );
 };
 
-const Sparkles = ({ count = 100, scale = 10, size = 1, speed = 1, opacity = 1, color = "white" }: any) => {
-  const mesh = useRef<THREE.Points>(null);
-  const [positions] = useState(() => {
+// Custom Sparkles component
+const Sparkles = ({ count = 100, scale = 1, size = 1, speed = 1, opacity = 1, color = "white" }: any) => {
+  const positions = useMemo(() => {
     const pos = new Float32Array(count * 3);
     for(let i=0; i<count; i++) {
-        pos[i*3] = (Math.random() - 0.5) * scale * 2;
-        pos[i*3+1] = (Math.random() - 0.5) * scale * 2;
-        pos[i*3+2] = (Math.random() - 0.5) * scale * 2;
+      pos[i * 3] = (Math.random() - 0.5) * scale;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * scale;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * scale;
     }
     return pos;
+  }, [count, scale]);
+  
+  const ref = useRef<THREE.Points>(null);
+  useFrame((state) => {
+    if (ref.current) ref.current.rotation.y = state.clock.elapsedTime * speed * 0.05;
   });
 
-  useFrame((state) => {
-      if(mesh.current) {
-          const t = state.clock.elapsedTime * speed;
-          mesh.current.rotation.y = Math.sin(t * 0.2) * 0.2;
-      }
-  })
-
   return (
-      <points ref={mesh}>
-        <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        </bufferGeometry>
-        <pointsMaterial color={color} size={size} transparent opacity={opacity} sizeAttenuation={false} />
-      </points>
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
+      </bufferGeometry>
+      <pointsMaterial size={size * 0.1} color={color} transparent opacity={opacity} sizeAttenuation blending={THREE.AdditiveBlending} depthWrite={false} />
+    </points>
   );
 };
 
@@ -209,7 +196,8 @@ export const Scene: React.FC = () => {
         <pointLight position={[0, -5, 2]} intensity={40} color="#ffaa00" decay={2} />
       </group>
 
-      <EffectComposer disableNormalPass multisampling={0}>
+      <EffectComposer enableNormalPass={false} multisampling={0}>
+        <SMAA />
         <Bloom 
             luminanceThreshold={1.1} 
             mipmapBlur 
