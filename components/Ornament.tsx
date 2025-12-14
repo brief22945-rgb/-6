@@ -4,19 +4,23 @@ import * as THREE from 'three';
 import { AppState, OrnamentData } from '../types';
 import { useStore } from '../store';
 
+// Custom Billboard to replace missing drei export
+const Billboard: React.FC<{ children: React.ReactNode; [key: string]: any }> = ({ children }) => {
+  const group = useRef<THREE.Group>(null);
+  useFrame(({ camera }) => {
+    if (group.current) {
+      group.current.quaternion.copy(camera.quaternion);
+    }
+  });
+  return <group ref={group}>{children}</group>;
+};
+
 const PhotoPlane: React.FC<{ data: OrnamentData }> = ({ data }) => {
   const texture = useLoader(THREE.TextureLoader, data.imageUrl!);
   const appState = useStore((s) => s.appState);
-  const billboardRef = useRef<THREE.Group>(null);
-
-  useFrame(({ camera }) => {
-    if (billboardRef.current) {
-      billboardRef.current.lookAt(camera.position);
-    }
-  });
   
   return (
-    <group ref={billboardRef}>
+    <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>
       <group
         onClick={(e) => {
           e.stopPropagation();
@@ -52,7 +56,7 @@ const PhotoPlane: React.FC<{ data: OrnamentData }> = ({ data }) => {
           <meshBasicMaterial map={texture} side={THREE.DoubleSide} toneMapped={false} />
         </mesh>
       </group>
-    </group>
+    </Billboard>
   );
 };
 
