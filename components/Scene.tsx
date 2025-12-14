@@ -1,118 +1,87 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration, SMAA } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { useStore } from '../store';
 import { Ornament } from './Ornament';
 import { AppState } from '../types';
 
-// Custom Implementations for Missing Drei Components
+// Custom implementations to replace missing drei exports
 
-const Float: React.FC<any> = ({ children, speed = 1, rotationIntensity = 1, floatIntensity = 1, floatingRange = [-0.1, 0.1] }) => {
+const Float = ({ children, speed = 1, rotationIntensity = 1, floatIntensity = 1 }: any) => {
   const ref = useRef<THREE.Group>(null);
   const offset = useRef(Math.random() * 10000);
-  
   useFrame((state) => {
-    if (!ref.current) return;
-    const t = state.clock.elapsedTime * speed + offset.current;
-    ref.current.rotation.x = Math.cos(t / 4) * rotationIntensity / 8;
-    ref.current.rotation.y = Math.sin(t / 4) * rotationIntensity / 8;
-    ref.current.rotation.z = Math.sin(t / 4) * rotationIntensity / 20;
-    
-    // Simple harmonic motion for Y floating
-    ref.current.position.y = Math.sin(t / 4) * floatIntensity / 10;
+    if (ref.current) {
+      const t = offset.current + state.clock.getElapsedTime();
+      ref.current.rotation.x = (Math.cos((t / 4) * speed) / 8) * rotationIntensity;
+      ref.current.rotation.y = (Math.sin((t / 4) * speed) / 8) * rotationIntensity;
+      ref.current.rotation.z = (Math.sin((t / 4) * speed) / 20) * rotationIntensity;
+      ref.current.position.y = (Math.sin((t / 4) * speed) / 10) * floatIntensity;
+    }
+  });
+  return <group ref={ref}>{children}</group>;
+};
+
+const Stars = ({ radius = 100, count = 5000, speed = 1 }: any) => {
+  const ref = useRef<THREE.Group>(null);
+  const [positions] = useState(() => {
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = radius * Math.cbrt(Math.random());
+      const theta = Math.random() * 2 * Math.PI;
+      const phi = Math.acos(2 * Math.random() - 1);
+      pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      pos[i * 3 + 2] = r * Math.cos(phi);
+    }
+    return pos;
+  });
+
+  useFrame((state, delta) => {
+    if (ref.current) {
+      ref.current.rotation.y -= delta * 0.02 * speed;
+    }
   });
 
   return (
     <group ref={ref}>
-      {children}
+      <points>
+        <bufferGeometry>
+           <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial size={0.5} color="white" transparent opacity={0.8} sizeAttenuation />
+      </points>
     </group>
   );
 };
 
-const Stars: React.FC<any> = ({ radius = 100, count = 5000 }) => {
-   const points = useMemo(() => {
-     const p = new Float32Array(count * 3);
-     for(let i=0; i<count*3; i+=3) {
-       const r = radius * Math.cbrt(Math.random());
-       const theta = Math.random() * Math.PI * 2;
-       const phi = Math.acos(2 * Math.random() - 1);
-       p[i] = r * Math.sin(phi) * Math.cos(theta);
-       p[i+1] = r * Math.sin(phi) * Math.sin(theta);
-       p[i+2] = r * Math.cos(phi);
-     }
-     return p;
-   }, [count, radius]);
-
-   return (
-     <points>
-       <bufferGeometry>
-         <bufferAttribute attach="attributes-position" count={count} array={points} itemSize={3} />
-       </bufferGeometry>
-       <pointsMaterial size={0.5} color="white" transparent opacity={0.8} sizeAttenuation depthWrite={false} />
-     </points>
-   );
-};
-
-const Sparkles: React.FC<any> = ({ count = 100, scale = 10, size = 1, color = "white", opacity = 1 }) => {
-  const points = useMemo(() => {
-    const p = new Float32Array(count * 3);
-    for(let i=0; i<count*3; i++) {
-        // Handle scale as number or vector-like (simplified to number here based on usage)
-        const s = typeof scale === 'number' ? scale : 10;
-        p[i] = (Math.random() - 0.5) * s * 2;
+const Sparkles = ({ count = 100, scale = 10, size = 1, speed = 1, opacity = 1, color = "white" }: any) => {
+  const mesh = useRef<THREE.Points>(null);
+  const [positions] = useState(() => {
+    const pos = new Float32Array(count * 3);
+    for(let i=0; i<count; i++) {
+        pos[i*3] = (Math.random() - 0.5) * scale * 2;
+        pos[i*3+1] = (Math.random() - 0.5) * scale * 2;
+        pos[i*3+2] = (Math.random() - 0.5) * scale * 2;
     }
-    return p;
-  }, [count, scale]);
-
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uColor: { value: new THREE.Color(color) },
-    uSize: { value: size },
-    uOpacity: { value: opacity }
-  }), [color, size, opacity]);
-
-  useFrame((state) => {
-    uniforms.uTime.value = state.clock.elapsedTime;
+    return pos;
   });
 
-  const vertexShader = `
-    uniform float uTime;
-    uniform float uSize;
-    void main() {
-        vec3 pos = position;
-        pos.y += sin(uTime * 0.5 + position.x) * 0.2;
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        gl_PointSize = uSize * (20.0 / -mvPosition.z);
-    }
-  `;
-
-  const fragmentShader = `
-    uniform vec3 uColor;
-    uniform float uOpacity;
-    uniform float uTime;
-    void main() {
-        if (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;
-        float alpha = uOpacity * (0.5 + 0.5 * sin(uTime * 3.0 + gl_FragCoord.x));
-        gl_FragColor = vec4(uColor, alpha);
-    }
-  `;
+  useFrame((state) => {
+      if(mesh.current) {
+          const t = state.clock.elapsedTime * speed;
+          mesh.current.rotation.y = Math.sin(t * 0.2) * 0.2;
+      }
+  })
 
   return (
-    <points>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={count} array={points} itemSize={3} />
-      </bufferGeometry>
-      <shaderMaterial 
-        uniforms={uniforms}
-        vertexShader={vertexShader}
-        fragmentShader={fragmentShader}
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
+      <points ref={mesh}>
+        <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial color={color} size={size} transparent opacity={opacity} sizeAttenuation={false} />
+      </points>
   );
 };
 
@@ -241,7 +210,6 @@ export const Scene: React.FC = () => {
       </group>
 
       <EffectComposer disableNormalPass multisampling={0}>
-        <SMAA />
         <Bloom 
             luminanceThreshold={1.1} 
             mipmapBlur 
